@@ -20,6 +20,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust
+        uses: Swatinem/rust_cache@2
+
       - name: Build
         run: cargo build --release --locked -p macintosh_wallpaper
 
