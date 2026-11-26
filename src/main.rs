@@ -218,6 +218,30 @@ impl ApplicationHandler for Application {
             _ => {}
         }
     }
+        fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        #[cfg(windows)]{
+            if let Some(state) = &self.state {
+                let hwnd = get_hwnd(&state.window);
+                unsafe {
+                    let progman = FindWindowW(
+                        "Progman\0".encode_utf16().collect::<Vec<_>>().as_ptr(),
+                        std::ptr::null(),
+                    );
+                    if progman != 0 {
+                        SetParent(hwnd, progman);
+                    } else {
+                        SetParent(hwnd, 0);
+                    }
+                }
+            }
+    
+            if let Some(&handle) = INSTANCE_MUTEX.get() {
+                unsafe {
+                    CloseHandle(handle);
+                }
+            }
+        }
+    }
 }
 
 impl Application {
@@ -294,7 +318,6 @@ fn ensure_single_instance() -> bool {
         .collect();
 
     unsafe {
-        // 先创建退出事件，确保 Mutex 出现之前事件已经存在
         let event = CreateEventW(
             0,
             1,
@@ -318,7 +341,6 @@ fn ensure_single_instance() -> bool {
         }
 
         if GetLastError() == ERROR_ALREADY_EXISTS {
-            // 已有实例：发送退出信号
             SetEvent(event);
 
             CloseHandle(event);
@@ -327,7 +349,6 @@ fn ensure_single_instance() -> bool {
             return false;
         }
 
-        // 第一个实例：保存两个句柄
         let _ = INSTANCE_MUTEX.set(mutex);
         let _ = EXIT_EVENT.set(event);
     }
@@ -540,13 +561,15 @@ fn embed_window(hwnd: isize, workerw: isize) -> bool {
 
         let width = rect.right - rect.left;
         let height = rect.bottom - rect.top;
+        if width <= 0 || height <= 0 {
+            return false;
+        }
 
         if width <= 0 || height <= 0 {
             return false;
         }
 
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
-
         let new_style =
             (style & !WS_POPUP) | WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;
 
@@ -559,10 +582,14 @@ fn embed_window(hwnd: isize, workerw: isize) -> bool {
             0,
             0,
             0,
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
 
-        SetParent(hwnd, workerw);
+        if SetParent(hwnd, workerw) == 0 {
+            // 嵌入失败，尝试恢复样式
+            SetWindowLongPtrW(hwnd, GWL_STYLE, style);
+            return false;
+        }
 
         SetWindowPos(
             hwnd,
@@ -571,10 +598,7 @@ fn embed_window(hwnd: isize, workerw: isize) -> bool {
             0,
             width,
             height,
-            SWP_NOZORDER
-                | SWP_NOACTIVATE
-                | SWP_FRAMECHANGED
-                | SWP_SHOWWINDOW,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW,
         ) != 0
     }
 }
