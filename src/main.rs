@@ -224,3 +224,115 @@ fn get_hwnd(window: &Window) -> isize {
         _ => panic!("Not a Windows window"),
     }
 }
+#[cfg(windows)]
+struct WorkerSearch {
+    shell_class: Vec<u16>,
+    worker_class: Vec<u16>,
+    found: isize,
+}
+
+#[cfg(windows)]
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn FindWindowW(class_name: *const u16, window_name: *const u16) -> isize;
+
+    fn FindWindowExW(
+        parent: isize,
+        child_after: isize,
+        class_name: *const u16,
+        window_name: *const u16,
+    ) -> isize;
+
+    fn SendMessageTimeoutW(
+        hwnd: isize,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+        flags: u32,
+        timeout: u32,
+        result: *mut usize,
+    ) -> isize;
+
+    fn EnumWindows(
+        callback: Option<unsafe extern "system" fn(isize, isize) -> i32>,
+        lparam: isize,
+    ) -> i32;
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn enum_windows_proc(hwnd: isize, lparam: isize) -> i32 {
+    let data = unsafe { &mut *(lparam as *mut WorkerSearch) };
+
+    let shell = unsafe {
+        FindWindowExW(
+            hwnd,
+            0,
+            data.shell_class.as_ptr(),
+            std::ptr::null(),
+        )
+    };
+
+    if shell != 0 {
+        let worker = unsafe {
+            FindWindowExW(
+                0,
+                hwnd,
+                data.worker_class.as_ptr(),
+                std::ptr::null(),
+            )
+        };
+
+        if worker != 0 {
+            data.found = worker;
+            return 0;
+        }
+    }
+
+    1
+}
+
+#[cfg(windows)]
+fn find_workerw() -> Option<isize> {
+    let progman_class = "Progman\0".encode_utf16().collect::<Vec<_>>();
+
+    let progman = unsafe {
+        FindWindowW(progman_class.as_ptr(), std::ptr::null())
+    };
+
+    if progman == 0 {
+        return None;
+    }
+
+    let mut result = 0usize;
+
+    unsafe {
+        SendMessageTimeoutW(
+            progman,
+            0x052C,
+            0,
+            0,
+            0,
+            1000,
+            &mut result,
+        );
+    }
+
+    let mut data = WorkerSearch {
+        shell_class: "SHELLDLL_DefView\0".encode_utf16().collect(),
+        worker_class: "WorkerW\0".encode_utf16().collect(),
+        found: 0,
+    };
+
+    unsafe {
+        EnumWindows(
+            Some(enum_windows_proc),
+            &mut data as *mut WorkerSearch as isize,
+        );
+    }
+
+    if data.found != 0 {
+        Some(data.found)
+    } else {
+        None
+    }
+}
