@@ -99,6 +99,23 @@ impl ApplicationHandler for Application {
         }
 
         let window = Arc::new(event_loop.create_window(attrs).unwrap());
+
+        #[cfg(windows)]
+         if desktop {
+            let hwnd = get_hwnd(&window);
+
+            match find_workerw() {
+                Some(workerw) => {
+                    println!("Window HWND: {hwnd:#x}");
+                    println!("WorkerW HWND: {workerw:#x}")
+                }
+                None =>{
+                    message_box("Could not find WorkerW window.");
+                    event_loop.exit();
+                    return;
+                }
+            }
+         }
         window.set_cursor_visible(!rt.full_screen);
         window.set_visible(true);
 
