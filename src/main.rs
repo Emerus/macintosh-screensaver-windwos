@@ -1,6 +1,6 @@
 #![windows_subsystem = "windows"]
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Context, Result};
 use nalgebra::Vector2;
@@ -69,6 +69,12 @@ impl ApplicationHandler for Application {
         let rt = &animation.runtime;
         let preview = rt.preview.is_some();
         let desktop = rt.desktop;
+
+        #[cfg(windows)]
+        if desktop && !ensure_single_instance() {
+            event_loop.exit();
+            return;
+        }
 
         #[cfg(windows)]
         if rt.configure {
@@ -237,6 +243,7 @@ fn message_box(message: impl Into<Vec<u8>>) {
         ShellMessageBoxA(0, 0, caption.as_ptr(), title.as_ptr(), 0);
     }
 }
+
 #[cfg(windows)]
 fn get_hwnd(window: &Window) -> isize {
     match window.window_handle().unwrap().as_raw() {
@@ -244,6 +251,37 @@ fn get_hwnd(window: &Window) -> isize {
         _ => panic!("Not a Windows window"),
     }
 }
+
+#[cfg(windows)]
+static INSTANCE_MUTEX: OnceLock<isize> = OnceLock::new();
+
+#[cfg(windows)]
+fn ensure_single_instance() -> bool {
+    const ERROR_ALREADY_EXISTS: u32 = 183;
+
+    let name: Vec<u16> = "Global\\MacintoshWallpaperInstance"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let handle = CreateMutexW(0, 1, name.as_ptr());
+
+        if handle == 0 {
+            return false;
+        }
+
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            CloseHandle(handle);
+            return false;
+        }
+
+        let _ = INSTANCE_MUTEX.set(handle);
+    }
+
+    true
+}
+
 #[cfg(windows)]
 struct WorkerSearch {
     shell_class: Vec<u16>,
@@ -294,6 +332,20 @@ unsafe extern "system" {
         callback: Option<unsafe extern "system" fn(isize, isize) -> i32>,
         lparam: isize,
     ) -> i32;
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn CreateMutexW(
+        attributes: isize,
+        initial_owner: i32,
+        name: *const u16,
+    ) -> isize;
+
+    fn GetLastError() -> u32;
+
+    fn CloseHandle(handle: isize) -> i32;
 }
 
 #[cfg(windows)]
