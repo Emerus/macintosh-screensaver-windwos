@@ -49,12 +49,13 @@ pub struct RuntimeConfig {
     pub fade_out: Option<f32>,
     #[arg(long, alias = "s")]
     pub full_screen: bool,
+    #[arg(long)]
+    pub desktop:bool,
     #[arg(long, alias = "p")]
     pub preview: Option<isize>,
     #[arg(long, alias = "c", hide = true)]
     pub configure: bool,
-    #[arg(long)]
-    pub desktop:bool,
+
 }
 
 #[derive(Default)]
