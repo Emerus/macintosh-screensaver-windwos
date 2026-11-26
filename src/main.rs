@@ -565,10 +565,6 @@ fn embed_window(hwnd: isize, workerw: isize) -> bool {
             return false;
         }
 
-        if width <= 0 || height <= 0 {
-            return false;
-        }
-
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
         let new_style =
             (style & !WS_POPUP) | WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;
