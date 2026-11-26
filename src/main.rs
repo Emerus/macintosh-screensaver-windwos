@@ -66,6 +66,7 @@ impl ApplicationHandler for Application {
         let animation = Animation::load(config).unwrap().runtime_from_args();
         let rt = &animation.runtime;
         let preview = rt.preview.is_some();
+        let desktop = rt.desktop;
 
         #[cfg(windows)]
         if rt.configure {
