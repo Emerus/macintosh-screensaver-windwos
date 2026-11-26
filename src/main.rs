@@ -542,6 +542,8 @@ fn embed_window(hwnd: isize, workerw: isize) -> bool {
     const WS_VISIBLE: isize = 0x10000000;
     const WS_CLIPSIBLINGS: isize = 0x04000000;
 
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOMOVE: u32 = 0x0002;
     const SWP_NOZORDER: u32 = 0x0004;
     const SWP_NOACTIVATE: u32 = 0x0010;
     const SWP_FRAMECHANGED: u32 = 0x0020;
