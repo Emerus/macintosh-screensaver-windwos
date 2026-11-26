@@ -423,6 +423,16 @@ fn embed_window(hwnd: isize, workerw: isize) -> bool {
 
         SetWindowLongPtrW(hwnd, GWL_STYLE, new_style);
 
+        SetWindowPos(
+            hwnd,
+            0,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+
         SetParent(hwnd, workerw);
 
         SetWindowPos(
