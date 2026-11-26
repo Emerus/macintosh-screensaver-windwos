@@ -53,6 +53,8 @@ pub struct RuntimeConfig {
     pub preview: Option<isize>,
     #[arg(long, alias = "c", hide = true)]
     pub configure: bool,
+    #[arg(long)]
+    pub desktop:bool,
 }
 
 #[derive(Default)]
