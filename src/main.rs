@@ -101,21 +101,24 @@ impl ApplicationHandler for Application {
         let window = Arc::new(event_loop.create_window(attrs).unwrap());
 
         #[cfg(windows)]
-         if desktop {
+        if desktop {
             let hwnd = get_hwnd(&window);
 
             match find_workerw() {
                 Some(workerw) => {
-                    println!("Window HWND: {hwnd:#x}");
-                    println!("WorkerW HWND: {workerw:#x}")
-                }
-                None =>{
+                    if !embed_window(hwnd, workerw) {
+                    message_box("Failed to embed window into WorkerW.");
+                    event_loop.exit();
+                    return;
+                    }        
+                }        
+                None => {
                     message_box("Could not find WorkerW window.");
                     event_loop.exit();
                     return;
-                }
+                 }
             }
-         }
+        }
         window.set_cursor_visible(!rt.full_screen);
         window.set_visible(true);
 
@@ -251,6 +254,23 @@ struct WorkerSearch {
 #[cfg(windows)]
 #[link(name = "user32")]
 unsafe extern "system" {
+    fn SetParent(hwnd: isize, new_parent: isize) -> isize;
+
+    fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
+
+    fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
+
+    fn GetClientRect(hwnd: isize, rect: *mut Rect) -> i32;
+    
+    fn SetWindowPos(
+        hwnd: isize,
+        insert_after: isize,
+        x: i32,
+        y: i32,
+        cx: i32,
+        cy: i32,
+        flags: u32,
+    ) -> i32;
     fn FindWindowW(class_name: *const u16, window_name: *const u16) -> isize;
 
     fn FindWindowExW(
@@ -351,5 +371,71 @@ fn find_workerw() -> Option<isize> {
         Some(data.found)
     } else {
         None
+    }
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct Rect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+#[cfg(windows)]
+fn embed_window(hwnd: isize, workerw: isize) -> bool {
+    const GWL_STYLE: i32 = -16;
+
+    const WS_CHILD: isize = 0x40000000;
+    const WS_POPUP: isize = 0x80000000u32 as isize;
+    const WS_VISIBLE: isize = 0x10000000;
+    const WS_CLIPSIBLINGS: isize = 0x04000000;
+
+    const SWP_NOZORDER: u32 = 0x0004;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+    const SWP_FRAMECHANGED: u32 = 0x0020;
+    const SWP_SHOWWINDOW: u32 = 0x0040;
+
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+
+    unsafe {
+        if GetClientRect(workerw, &mut rect) == 0 {
+            return false;
+        }
+
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+
+        if width <= 0 || height <= 0 {
+            return false;
+        }
+
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+
+        let new_style =
+            (style & !WS_POPUP) | WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS;
+
+        SetWindowLongPtrW(hwnd, GWL_STYLE, new_style);
+
+        SetParent(hwnd, workerw);
+
+        SetWindowPos(
+            hwnd,
+            0,
+            0,
+            0,
+            width,
+            height,
+            SWP_NOZORDER
+                | SWP_NOACTIVATE
+                | SWP_FRAMECHANGED
+                | SWP_SHOWWINDOW,
+        ) != 0
     }
 }
