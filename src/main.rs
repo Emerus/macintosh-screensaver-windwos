@@ -64,6 +64,9 @@ fn main() -> Result<()> {
 
 impl ApplicationHandler for Application {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.state.is_some() {
+            return;
+        }
         let config = include_bytes!("../animation/animation.bin");
         let animation = Animation::load(config).unwrap().runtime_from_args();
         let rt = &animation.runtime;
@@ -124,6 +127,20 @@ impl ApplicationHandler for Application {
                     return;
                  }
             }
+            let event = *EXIT_EVENT.get().unwrap();
+
+            std::thread::spawn(move || {
+                unsafe {
+                    WaitForSingleObject(event, u32::MAX);
+            
+                    PostMessageW(
+                        hwnd,
+                        0x0010, // WM_CLOSE
+                        0,
+                        0,
+                    );
+                }
+            });
         }
         window.set_cursor_visible(!rt.full_screen);
         window.set_visible(true);
@@ -256,27 +273,63 @@ fn get_hwnd(window: &Window) -> isize {
 static INSTANCE_MUTEX: OnceLock<isize> = OnceLock::new();
 
 #[cfg(windows)]
+static EXIT_EVENT: OnceLock<isize> = OnceLock::new();
+
+#[cfg(windows)]
 fn ensure_single_instance() -> bool {
     const ERROR_ALREADY_EXISTS: u32 = 183;
 
-    let name: Vec<u16> = "Global\\MacintoshWallpaperInstance"
+    if INSTANCE_MUTEX.get().is_some() {
+        return true;
+    }
+
+    let mutex_name: Vec<u16> = "Global\\MacintoshWallpaperInstance"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let event_name: Vec<u16> = "Global\\MacintoshWallpaperExitEvent"
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect();
 
     unsafe {
-        let handle = CreateMutexW(0, 1, name.as_ptr());
+        // 先创建退出事件，确保 Mutex 出现之前事件已经存在
+        let event = CreateEventW(
+            0,
+            1,
+            0,
+            event_name.as_ptr(),
+        );
 
-        if handle == 0 {
+        if event == 0 {
+            return false;
+        }
+
+        let mutex = CreateMutexW(
+            0,
+            0,
+            mutex_name.as_ptr(),
+        );
+
+        if mutex == 0 {
+            CloseHandle(event);
             return false;
         }
 
         if GetLastError() == ERROR_ALREADY_EXISTS {
-            CloseHandle(handle);
+            // 已有实例：发送退出信号
+            SetEvent(event);
+
+            CloseHandle(event);
+            CloseHandle(mutex);
+
             return false;
         }
 
-        let _ = INSTANCE_MUTEX.set(handle);
+        // 第一个实例：保存两个句柄
+        let _ = INSTANCE_MUTEX.set(mutex);
+        let _ = EXIT_EVENT.set(event);
     }
 
     true
@@ -299,6 +352,13 @@ unsafe extern "system" {
     fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
 
     fn GetClientRect(hwnd: isize, rect: *mut Rect) -> i32;
+
+    fn PostMessageW(
+        hwnd: isize,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> i32;
     
     fn SetWindowPos(
         hwnd: isize,
@@ -346,6 +406,23 @@ unsafe extern "system" {
     fn GetLastError() -> u32;
 
     fn CloseHandle(handle: isize) -> i32;
+
+    fn CreateEventW(
+    attributes: isize,
+    manual_reset: i32,
+    initial_state: i32,
+    name: *const u16,
+    ) -> isize;
+
+    fn OpenEventW(
+        desired_access: u32,
+        inherit_handle: i32,
+        name: *const u16,
+    ) -> isize;
+
+    fn SetEvent(event: isize) -> i32;
+    
+    fn WaitForSingleObject(handle: isize, milliseconds: u32) -> u32;
 }
 
 #[cfg(windows)]
