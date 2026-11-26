@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use nalgebra::Vector2;
+
+use wgpu::rwh::{HasWindowHandle, RawWindowHandle};
 use wgpu::{
     Color, CommandEncoderDescriptor, CompositeAlphaMode, Instance, LoadOp, Operations, PresentMode,
     RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface,
@@ -77,8 +79,9 @@ impl ApplicationHandler for Application {
 
         #[allow(unused_mut)]
         let mut attrs = WindowAttributes::default()
-            .with_fullscreen(rt.full_screen.then_some(Fullscreen::Borderless(None)))
+            .with_fullscreen((rt.full_screen && !desktop).then_some(Fullscreen::Borderless(None)))
             .with_title("Macintosh Wallpaper")
+            .with_decorations(!desktop)
             .with_visible(false);
 
         #[cfg(windows)]
@@ -212,5 +215,12 @@ fn message_box(message: impl Into<Vec<u8>>) {
         let title = CString::new("Macintosh Screensaver").unwrap();
         let caption = CString::new(message.into()).unwrap();
         ShellMessageBoxA(0, 0, caption.as_ptr(), title.as_ptr(), 0);
+    }
+}
+#[cfg(windows)]
+fn get_hwnd(window: &Window) -> isize {
+    match window.window_handle().unwrap().as_raw() {
+        RawWindowHandle::Win32(handle) => handle.hwnd.get(),
+        _ => panic!("Not a Windows window"),
     }
 }
